@@ -1,14 +1,34 @@
+import os
 from langchain_google_genai import ChatGoogleGenerativeAI
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from openinference.instrumentation.langchain import LangChainInstrumentor
+
 from langgraph.prebuilt import create_react_agent
+from crewai import Agent, LLM
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from tools import web_search , scrape_url 
+from tools import web_search, scrape_url
 from dotenv import load_dotenv
+
+# 1. OpenTelemetry Setup
+provider = TracerProvider()
+trace.set_tracer_provider(provider)
+
+otlp_exporter = OTLPSpanExporter()
+provider.add_span_processor(SimpleSpanProcessor(otlp_exporter))
+
+# 2. LangChain/Gemini Tracing Instrument
+LangChainInstrumentor().instrument()
+
+# --- Aapka baaki ka main custom logic/functions yahan se shuru hoga ---
 
 load_dotenv()
 
 #model setup 
-llm = ChatGoogleGenerativeAI(model="gemini-3.8-flash",temperature=0.7)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash",temperature=0.7)
 
 
 #1st agent 

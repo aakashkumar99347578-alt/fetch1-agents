@@ -37,4 +37,4 @@ pydantic>=2.5.0
 # orjson (fast JSON)
 # pandas (data handling)
 streamlit
-langchain-google-genai
+langchain-google-genai>=1.0.0

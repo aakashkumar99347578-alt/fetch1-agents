@@ -1,6 +1,16 @@
 import streamlit as st
 import time
-from agents import build_reader_agent, build_search_agent, writer_chain, critic_chain
+import os
+from dotenv import load_dotenv
+from agents import (
+    build_reader_agent,
+    build_search_agent,
+    writer_chain,
+    critic_chain,
+    extract_text_content,
+)
+
+load_dotenv()
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -312,9 +322,9 @@ def step_card(num: str, title: str, state: str, desc: str = ""):
 
 
 # ── Session state init ────────────────────────────────────────────────────────
-for key in ("results", "running", "done"):
+for key in ("results", "running", "done", "error"):
     if key not in st.session_state:
-        st.session_state[key] = {} if key == "results" else False
+        st.session_state[key] = {} if key == "results" else None if key == "error" else False
 
 
 # ── Hero ──────────────────────────────────────────────────────────────────────
@@ -398,8 +408,13 @@ with col_pipeline:
 if run_btn:
     if not topic.strip():
         st.warning("Please enter a research topic first.")
+    elif not os.getenv("GOOGLE_API_KEY"):
+        st.error("Missing `GOOGLE_API_KEY`! Please configure your Google Gemini API key in your `.env` file.")
+    elif not os.getenv("TAVILY_API_KEY"):
+        st.error("Missing `TAVILY_API_KEY`! Please configure your Tavily Search API key in your `.env` file.")
     else:
         st.session_state.results = {}
+        st.session_state.error = None
         st.session_state.running = True
         st.session_state.done = False
         st.rerun()
@@ -408,54 +423,68 @@ if st.session_state.running and not st.session_state.done:
     results = {}
     topic_val = st.session_state.topic_input
 
-    # ── Step 1: Search ──
-    with st.spinner("🔍  Search Agent is working…"):
-        search_agent = build_search_agent()
-        sr = search_agent.invoke({
-            "messages": [("user", f"Find recent, reliable and detailed information about: {topic_val}")]
-        })
-        results["search"] = sr["messages"][-1].content
-        st.session_state.results = dict(results)
-    st.rerun() if False else None   # keep inline for now
+    try:
+        # ── Step 1: Search ──
+        with st.spinner("🔍  Search Agent is working…"):
+            search_agent = build_search_agent()
+            sr = search_agent.invoke({
+                "messages": [("user", f"Find recent, reliable and detailed information about: {topic_val}")]
+            })
+            raw_search = sr["messages"][-1].content
+            results["search"] = extract_text_content(raw_search)
+            st.session_state.results = dict(results)
 
-    # ── Step 2: Reader ──
-    with st.spinner("📄  Reader Agent is scraping top resources…"):
-        reader_agent = build_reader_agent()
-        rr = reader_agent.invoke({
-            "messages": [("user",
-                f"Based on the following search results about '{topic_val}', "
-                f"pick the most relevant URL and scrape it for deeper content.\n\n"
-                f"Search Results:\n{results['search'][:800]}"
-            )]
-        })
-        results["reader"] = rr["messages"][-1].content
-        st.session_state.results = dict(results)
+        # ── Step 2: Reader ──
+        with st.spinner("📄  Reader Agent is scraping top resources…"):
+            reader_agent = build_reader_agent()
+            rr = reader_agent.invoke({
+                "messages": [("user",
+                    f"Based on the following search results about '{topic_val}', "
+                    f"pick the most relevant URL and scrape it for deeper content.\n\n"
+                    f"Search Results:\n{results['search'][:800]}"
+                )]
+            })
+            raw_reader = rr["messages"][-1].content
+            results["reader"] = extract_text_content(raw_reader)
+            st.session_state.results = dict(results)
 
-    # ── Step 3: Writer ──
-    with st.spinner("✍️  Writer is drafting the report…"):
-        research_combined = (
-            f"SEARCH RESULTS:\n{results['search']}\n\n"
-            f"DETAILED SCRAPED CONTENT:\n{results['reader']}"
-        )
-        results["writer"] = writer_chain.invoke({
-            "topic": topic_val,
-            "research": research_combined
-        })
-        st.session_state.results = dict(results)
+        # ── Step 3: Writer ──
+        with st.spinner("✍️  Writer is drafting the report…"):
+            research_combined = (
+                f"SEARCH RESULTS:\n{results['search']}\n\n"
+                f"DETAILED SCRAPED CONTENT:\n{results['reader']}"
+            )
+            raw_writer = writer_chain.invoke({
+                "topic": topic_val,
+                "research": research_combined
+            })
+            results["writer"] = extract_text_content(raw_writer)
+            st.session_state.results = dict(results)
 
-    # ── Step 4: Critic ──
-    with st.spinner("🧐  Critic is reviewing the report…"):
-        results["critic"] = critic_chain.invoke({
-            "report": results["writer"]
-        })
-        st.session_state.results = dict(results)
+        # ── Step 4: Critic ──
+        with st.spinner("🧐  Critic is reviewing the report…"):
+            raw_critic = critic_chain.invoke({
+                "report": results["writer"]
+            })
+            results["critic"] = extract_text_content(raw_critic)
+            st.session_state.results = dict(results)
 
-    st.session_state.running = False
-    st.session_state.done = True
-    st.rerun()
+        st.session_state.running = False
+        st.session_state.done = True
+        st.rerun()
+
+    except Exception as e:
+        st.session_state.running = False
+        st.session_state.done = False
+        st.session_state.error = str(e)
+        st.rerun()
 
 
 # ── Results display ───────────────────────────────────────────────────────────
+if st.session_state.get("error"):
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+    st.error(f"❌ Error during research execution: {st.session_state['error']}")
+
 r = st.session_state.results
 
 if r:

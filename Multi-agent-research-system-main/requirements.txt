@@ -39,3 +39,5 @@ pydantic>=2.5.0
 streamlit
 langchain-google-genai>=1.0.0
 uagents-core>=0.4.0
+uvicorn>=0.30.0
+starlette>=0.38.0

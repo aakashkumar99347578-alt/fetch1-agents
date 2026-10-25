@@ -38,3 +38,4 @@ pydantic>=2.5.0
 # pandas (data handling)
 streamlit
 langchain-google-genai>=1.0.0
+uagents-core>=0.4.0

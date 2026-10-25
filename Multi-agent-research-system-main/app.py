@@ -12,6 +12,32 @@ from agents import (
 
 load_dotenv()
 
+# ── Auto-register with Agentverse if credentials exist ────────────────────────
+@st.cache_resource
+def try_agentverse_registration():
+    agentverse_key = os.getenv("AGENTVERSE_KEY")
+    seed_phrase = os.getenv("AGENT_SEED_PHRASE")
+    if agentverse_key and seed_phrase:
+        try:
+            from uagents_core.utils.registration import (
+                register_chat_agent,
+                RegistrationRequestCredentials,
+            )
+            return register_chat_agent(
+                name=os.getenv("AGENT_NAME", "your researcher dost"),
+                endpoint=os.getenv("AGENT_ENDPOINT", "https://fetch1-agents.onrender.com"),
+                active=True,
+                credentials=RegistrationRequestCredentials(
+                    agentverse_api_key=agentverse_key,
+                    agent_seed_phrase=seed_phrase,
+                ),
+            )
+        except Exception:
+            return False
+    return False
+
+try_agentverse_registration()
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="ResearchMind · AI Research Agent",

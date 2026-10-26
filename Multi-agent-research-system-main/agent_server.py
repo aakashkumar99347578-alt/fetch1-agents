@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import logging
+from contextlib import asynccontextmanager
 from uuid import uuid4
 from dotenv import load_dotenv
 
@@ -267,13 +268,21 @@ async def home(request):
 
 
 # ── Starlette Application Setup ───────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app):
+    try:
+        ensure_agentverse_registered()
+    except Exception as err:
+        logger.error(f"Startup registration error: {err}")
+    yield
+
 routes = [
     Route("/", endpoint=home, methods=["GET", "POST"]),
     Route("/webhook", endpoint=handle_agentverse_message, methods=["POST"]),
     Route("/submit", endpoint=handle_agentverse_message, methods=["POST"]),
 ]
 
-app = Starlette(debug=False, routes=routes, on_startup=[ensure_agentverse_registered])
+app = Starlette(debug=False, routes=routes, lifespan=lifespan)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))

@@ -167,17 +167,20 @@ async def handle_agentverse_message(request):
             protocol_digest=proto_digest,
         )
 
-        # Send asynchronously via Almanac if needed
-        try:
-            send_message_to_agent(
-                destination=envelope.sender,
-                msg=reply_msg,
-                sender=agent_identity,
-                session_id=envelope.session,
-                track_interaction=False,
-            )
-        except Exception as send_err:
-            logger.warning(f"Async send notice (fallback to direct HTTP sync response): {send_err}")
+        # Try async send in background thread without blocking direct HTTP response
+        import threading
+        def _bg_send():
+            try:
+                send_message_to_agent(
+                    destination=envelope.sender,
+                    msg=reply_msg,
+                    sender=agent_identity,
+                    session_id=envelope.session,
+                    track_interaction=False,
+                )
+            except Exception:
+                pass
+        threading.Thread(target=_bg_send, daemon=True).start()
 
         # Return the signed envelope directly in the HTTP response
         return JSONResponse(json.loads(reply_envelope.model_dump_json()))
